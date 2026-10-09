@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">久留美情绪壁纸</string>
+    <string name="wallpaper_description">根据上证指数涨跌切换久留美情绪视频壁纸</string>
+    <string name="open_picker">设置动态壁纸</string>
+    <string name="current_pct">上证涨跌: %1$s</string>
+    <string name="current_tier">当前情绪: %1$s</string>
+    <string name="debug_force">调试强制档位</string>
+    <string-array name="debug_tiers">
+        <item>自动（跟随指数）</item>
+        <item>1 cry (&lt;-2%)</item>
+        <item>2 worried (-2..-0.5)</item>
+        <item>3 calm (-0.5..0.5)</item>
+        <item>4 smile (0.5..2)</item>
+        <item>5 bigsmile (&gt;2%)</item>
+    </string-array>
+</resources>
