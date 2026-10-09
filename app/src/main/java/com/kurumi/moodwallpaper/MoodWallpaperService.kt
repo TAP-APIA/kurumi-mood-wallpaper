@@ -54,7 +54,7 @@ class MoodWallpaperService : WallpaperService() {
             super.onSurfaceChanged(holder, format, width, height)
             // MediaPlayer scaling mode handles center-crop; restart if needed
             if (surfaceReady && playingTier > 0) {
-                player?.setDisplay(holder)
+                player?.setSurface(holder.surface)
             }
         }
 
@@ -137,7 +137,7 @@ class MoodWallpaperService : WallpaperService() {
                 mp.setVideoScalingMode(
                     MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
                 )
-                mp.setDisplay(surfaceHolder)
+                mp.setSurface(surfaceHolder.surface)
                 mp.setOnErrorListener { _, _, _ ->
                     releasePlayer()
                     true
@@ -153,7 +153,7 @@ class MoodWallpaperService : WallpaperService() {
 
         private fun releasePlayer() {
             try {
-                player?.setDisplay(null)
+                player?.setSurface(null)
             } catch (_: Exception) {
             }
             try {
