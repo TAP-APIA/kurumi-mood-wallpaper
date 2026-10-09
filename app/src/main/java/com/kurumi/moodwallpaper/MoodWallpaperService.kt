@@ -29,8 +29,14 @@ class MoodWallpaperService : WallpaperService() {
         // Debug spinner in MainActivity changes this; apply immediately (useful in preview).
         private val prefListener =
             SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == MoodPrefs.KEY_DEBUG_TIER || key == MoodPrefs.KEY_TIER) {
-                    mainHandler.post { switchIfNeeded(MoodPrefs.effectiveTier(applicationContext)) }
+                when (key) {
+                    MoodPrefs.KEY_DEBUG_TIER, MoodPrefs.KEY_TIER ->
+                        mainHandler.post {
+                            switchIfNeeded(MoodPrefs.effectiveTier(applicationContext))
+                        }
+                    MoodPrefs.KEY_SOURCE_ID, MoodPrefs.KEY_CUSTOM_URL,
+                    MoodPrefs.KEY_CUSTOM_PATH, MoodPrefs.KEY_CUSTOM_MULT ->
+                        mainHandler.post { refreshQuote(force = true) }
                 }
             }
 
@@ -85,7 +91,7 @@ class MoodWallpaperService : WallpaperService() {
             super.onDestroy()
         }
 
-        private fun refreshQuote() {
+        private fun refreshQuote(force: Boolean = false) {
             val debug = MoodPrefs.getDebugTier(applicationContext)
             if (debug in 1..5) {
                 switchIfNeeded(debug)
@@ -94,15 +100,23 @@ class MoodWallpaperService : WallpaperService() {
             if (io.isShutdown) return
             io.execute {
                 try {
-                    val result = IndexFetcher.fetch()
+                    val result = IndexFetcher.fetch(applicationContext)
                     val tier = MoodTier.fromPct(result.pct)
-                    MoodPrefs.saveQuote(applicationContext, result.pct, tier)
+                    MoodPrefs.saveQuote(
+                        applicationContext, result.pct, tier,
+                        "${result.label} (${result.source})"
+                    )
                     mainHandler.post { switchIfNeeded(MoodPrefs.effectiveTier(applicationContext)) }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    MoodPrefs.recordError(
+                        applicationContext,
+                        "行情: ${e.message ?: e.javaClass.simpleName}"
+                    )
                     // Keep last mood (default mood_3)
                     mainHandler.post { switchIfNeeded(MoodPrefs.effectiveTier(applicationContext)) }
                 }
             }
+            if (force) { /* just kick off above */ }
         }
 
         /** Only switch video when the tier actually changes. */

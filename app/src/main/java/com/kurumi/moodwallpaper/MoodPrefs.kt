@@ -13,8 +13,14 @@ object MoodPrefs {
     const val KEY_DEBUG_TIER = "debug_tier" // 0 = auto, 1..5 = forced
     const val KEY_LAST_ERROR = "last_error"
     const val KEY_RENDER_STATUS = "render_status"
+    const val KEY_SOURCE_ID = "index_source_id"
+    const val KEY_SOURCE_LABEL = "last_source_label"
+    const val KEY_CUSTOM_URL = "custom_url"
+    const val KEY_CUSTOM_PATH = "custom_path"
+    const val KEY_CUSTOM_MULT = "custom_mult"
 
     const val DEFAULT_TIER = 3
+    const val DEFAULT_SOURCE = "shanghai"
 
     fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
@@ -32,10 +38,38 @@ object MoodPrefs {
         prefs(ctx).edit().putInt(KEY_DEBUG_TIER, tier).apply()
     }
 
-    fun saveQuote(ctx: Context, pct: Float, tier: Int) {
+    fun getSourceId(ctx: Context): String =
+        prefs(ctx).getString(KEY_SOURCE_ID, DEFAULT_SOURCE) ?: DEFAULT_SOURCE
+
+    fun setSourceId(ctx: Context, id: String) {
+        prefs(ctx).edit().putString(KEY_SOURCE_ID, id).apply()
+    }
+
+    fun getSourceLabel(ctx: Context): String =
+        prefs(ctx).getString(KEY_SOURCE_LABEL, "") ?: ""
+
+    fun getCustomUrl(ctx: Context): String =
+        prefs(ctx).getString(KEY_CUSTOM_URL, "") ?: ""
+
+    fun getCustomPath(ctx: Context): String =
+        prefs(ctx).getString(KEY_CUSTOM_PATH, "data.f170") ?: "data.f170"
+
+    fun getCustomMult(ctx: Context): Float =
+        prefs(ctx).getFloat(KEY_CUSTOM_MULT, 0.01f)
+
+    fun saveCustom(ctx: Context, url: String, path: String, mult: Float) {
+        prefs(ctx).edit()
+            .putString(KEY_CUSTOM_URL, url.trim())
+            .putString(KEY_CUSTOM_PATH, path.trim().ifEmpty { "data.f170" })
+            .putFloat(KEY_CUSTOM_MULT, if (mult == 0f || mult.isNaN()) 1f else mult)
+            .apply()
+    }
+
+    fun saveQuote(ctx: Context, pct: Float, tier: Int, sourceLabel: String) {
         prefs(ctx).edit()
             .putFloat(KEY_PCT, pct)
             .putInt(KEY_TIER, tier.coerceIn(1, 5))
+            .putString(KEY_SOURCE_LABEL, sourceLabel)
             .apply()
     }
 

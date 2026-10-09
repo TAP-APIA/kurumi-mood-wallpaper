@@ -1,16 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">久留美情绪壁纸</string>
-    <string name="wallpaper_description">根据上证指数涨跌切换久留美情绪视频壁纸</string>
+    <string name="wallpaper_description">根据所选指数涨跌切换久留美情绪视频壁纸</string>
     <string name="open_picker">设置动态壁纸</string>
-    <string name="current_pct">上证涨跌: %1$s</string>
+    <string name="current_source">数据源: %1$s</string>
+    <string name="current_pct">涨跌幅: %1$s</string>
     <string name="current_tier">当前情绪: %1$s</string>
+    <string name="index_select">跟踪指数</string>
+    <string name="custom_url_hint">自定义 API URL (http/https)</string>
+    <string name="custom_path_hint">JSON 路径，如 data.f170 或 data.items[0].pct</string>
+    <string name="custom_mult_hint">乘数（f170 填 0.01；已是百分比填 1）</string>
+    <string name="custom_test">测试自定义 API</string>
+    <string name="custom_save">保存自定义设置</string>
+    <string name="battery_ok">电池优化: 已忽略（后台刷新更稳）</string>
+    <string name="battery_need">电池优化: 未忽略（可能被系统杀死）</string>
+    <string name="battery_request">申请忽略电池优化</string>
+    <string name="battery_settings">打开电池设置</string>
+    <string name="debug_force">调试强制档位</string>
     <string name="version_fmt">版本 %1$s (%2$d)</string>
     <string name="status_fmt">渲染状态: %1$s</string>
     <string name="error_fmt">最近错误: %1$s</string>
     <string name="none">无</string>
     <string name="clear_error">清除错误记录</string>
-    <string name="debug_force">调试强制档位</string>
     <string-array name="debug_tiers">
         <item>自动（跟随指数）</item>
         <item>1 cry (&lt;-2%)</item>

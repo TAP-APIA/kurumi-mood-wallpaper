@@ -1,5 +1,6 @@
 package com.kurumi.moodwallpaper
 
+import android.content.Context
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -8,76 +9,217 @@ import java.net.URL
 import java.nio.charset.Charset
 
 /**
- * Fetches Shanghai Composite (上证指数) daily % change.
- * Prefer Eastmoney f170 (value is pct*100); fall back to Sina hq.sinajs.cn.
+ * Fetches daily % change for the selected [IndexSource].
+ *
+ * Presets try (in order): Eastmoney push2his f170/100 → Sina → Tencent.
+ * push2.eastmoney.com returns 502 from many networks; push2his works (with retries).
+ * Custom source: user URL + JSON path + multiplier.
  */
 object IndexFetcher {
     private const val UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    private const val SINA_REF = "https://finance.sina.com.cn"
 
-    private const val EASTMONEY =
-        "https://push2.eastmoney.com/api/qt/stock/get?secid=1.000001&fields=f170"
+    data class Result(val pct: Float, val source: String, val label: String)
 
-    private const val SINA = "https://hq.sinajs.cn/list=s_sh000001"
-
-    data class Result(val pct: Float, val source: String)
-
-    fun fetch(): Result {
-        tryEastmoney()?.let { return it }
-        return trySina()
-            ?: throw IllegalStateException("Unable to fetch 上证指数 pct from Eastmoney or Sina")
-    }
-
-    private fun tryEastmoney(): Result? {
-        return try {
-            val body = httpGet(EASTMONEY, null)
-            val data = JSONObject(body).optJSONObject("data") ?: return null
-            if (!data.has("f170") || data.isNull("f170")) return null
-            // f170 is pct change * 100 (e.g. 5 means 0.05%)
-            val raw = data.getDouble("f170")
-            Result((raw / 100.0).toFloat(), "eastmoney")
-        } catch (_: Exception) {
-            null
+    fun fetch(ctx: Context): Result {
+        val src = IndexSource.fromId(MoodPrefs.getSourceId(ctx))
+        return when (src) {
+            IndexSource.SHANGHAI -> fetchPreset(
+                src,
+                eastmoneySecid = "1.000001",
+                sinaList = "s_sh000001",
+                sinaKind = SinaKind.SIMPLE_PCT3,
+                tencentCodes = "sh000001"
+            )
+            IndexSource.CSI300 -> fetchPreset(
+                src,
+                eastmoneySecid = "1.000300",
+                sinaList = "s_sh000300",
+                sinaKind = SinaKind.SIMPLE_PCT3,
+                tencentCodes = "sh000300"
+            )
+            IndexSource.NASDAQ -> fetchPreset(
+                src,
+                eastmoneySecid = "100.NDX",
+                sinaList = "gb_\$ndx",
+                sinaKind = SinaKind.GB_PCT2,
+                sinaAltList = "int_nasdaq",
+                sinaAltKind = SinaKind.SIMPLE_PCT3,
+                tencentCodes = "usNDX"
+            )
+            IndexSource.HSI -> fetchPreset(
+                src,
+                eastmoneySecid = "100.HSI",
+                sinaList = "rt_hkHSI",
+                sinaKind = SinaKind.HK_PCT8,
+                tencentCodes = "hkHSI"
+            )
+            IndexSource.GOLD -> fetchPreset(
+                src,
+                eastmoneySecid = "101.GC00Y",
+                eastmoneyAltSecid = "118.AU9999",
+                sinaList = "hf_GC",
+                sinaKind = SinaKind.HF_PRICE_PREV,
+                sinaAltList = "nf_AU0",
+                sinaAltKind = SinaKind.NF_AU0,
+                tencentCodes = "hf_GC"
+            )
+            IndexSource.CUSTOM -> fetchCustom(ctx)
         }
     }
 
-    private fun trySina(): Result? {
+    private enum class SinaKind {
+        /** name,price,change,pct,... */
+        SIMPLE_PCT3,
+        /** gb_$xxx: name,price,pct,... */
+        GB_PCT2,
+        /** rt_hkHSI: code,name,cur,prev,open,high,low,...,change,pct(at 8) */
+        HK_PCT8,
+        /** hf_GC / hf_XAU: price,..., prev at [7] */
+        HF_PRICE_PREV,
+        /** nf_AU0: last at [5], prev_settle at [9] */
+        NF_AU0
+    }
+
+    private fun fetchPreset(
+        src: IndexSource,
+        eastmoneySecid: String,
+        eastmoneyAltSecid: String? = null,
+        sinaList: String,
+        sinaKind: SinaKind,
+        sinaAltList: String? = null,
+        sinaAltKind: SinaKind? = null,
+        tencentCodes: String
+    ): Result {
+        tryEastmoney(eastmoneySecid)?.let {
+            return Result(it, "eastmoney:$eastmoneySecid", src.label)
+        }
+        if (eastmoneyAltSecid != null) {
+            tryEastmoney(eastmoneyAltSecid)?.let {
+                return Result(it, "eastmoney:$eastmoneyAltSecid", src.label)
+            }
+        }
+        trySina(sinaList, sinaKind)?.let {
+            return Result(it, "sina:$sinaList", src.label)
+        }
+        if (sinaAltList != null && sinaAltKind != null) {
+            trySina(sinaAltList, sinaAltKind)?.let {
+                return Result(it, "sina:$sinaAltList", src.label)
+            }
+        }
+        tryTencent(tencentCodes)?.let {
+            return Result(it, "tencent:$tencentCodes", src.label)
+        }
+        throw IllegalStateException("无法获取 ${src.label} 涨跌幅（Eastmoney/Sina/Tencent 均失败）")
+    }
+
+    fun fetchCustom(ctx: Context): Result {
+        val url = MoodPrefs.getCustomUrl(ctx).trim()
+        if (url.isEmpty()) throw IllegalArgumentException("自定义 API：请先填写 URL")
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            throw IllegalArgumentException("自定义 API：URL 须以 http:// 或 https:// 开头")
+        }
+        val path = MoodPrefs.getCustomPath(ctx).ifBlank { "data.f170" }
+        val mult = MoodPrefs.getCustomMult(ctx).let { if (it == 0f || it.isNaN()) 1f else it }
+        val body = httpGet(url, referer = null, preferGbk = false)
+        val trimmed = body.trim()
+        if (trimmed.isEmpty() || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) {
+            throw IllegalArgumentException(
+                "自定义 API：响应不是 JSON（开头=${trimmed.take(40).replace('\n', ' ')}）"
+            )
+        }
+        val root: Any = if (trimmed.startsWith("[")) {
+            org.json.JSONArray(trimmed)
+        } else {
+            JSONObject(trimmed)
+        }
+        val raw = JsonPath.readNumber(root, path)
+        val pct = (raw * mult).toFloat()
+        if (!pct.isFinite()) throw IllegalArgumentException("自定义 API：解析结果无效 ($pct)")
+        return Result(pct, "custom", IndexSource.CUSTOM.label)
+    }
+
+    /** Eastmoney: f170 is pct*100 (e.g. 5 → 0.05%). Host push2his; retry on flaky SSL. */
+    private fun tryEastmoney(secid: String): Float? {
+        val url =
+            "https://push2his.eastmoney.com/api/qt/stock/get?secid=$secid&fields=f43,f170,f60,f14"
+        repeat(3) { attempt ->
+            try {
+                val body = httpGet(url, referer = null, preferGbk = false)
+                if (body.contains("Bad Gateway") || body.trimStart().startsWith("<")) return@repeat
+                val data = JSONObject(body).optJSONObject("data") ?: return@repeat
+                if (!data.has("f170") || data.isNull("f170")) return@repeat
+                return (data.getDouble("f170") / 100.0).toFloat()
+            } catch (_: Exception) {
+                if (attempt == 2) return null
+                try { Thread.sleep(300L * (attempt + 1)) } catch (_: InterruptedException) {}
+            }
+        }
+        return null
+    }
+
+    private fun trySina(list: String, kind: SinaKind): Float? {
         return try {
-            val body = httpGet(SINA, "https://finance.sina.com.cn")
-            // var hq_str_s_sh000001="名称,现价,涨跌额,涨跌幅%,成交量,成交额";
+            val body = httpGet("https://hq.sinajs.cn/list=$list", SINA_REF, preferGbk = true)
             val start = body.indexOf('"')
             val end = body.lastIndexOf('"')
             if (start < 0 || end <= start) return null
             val fields = body.substring(start + 1, end).split(",")
-            if (fields.size < 4) return null
-            val pct = fields[3].trim().toFloat()
-            Result(pct, "sina")
+            when (kind) {
+                SinaKind.SIMPLE_PCT3 -> fields.getOrNull(3)?.trim()?.toFloatOrNull()
+                SinaKind.GB_PCT2 -> fields.getOrNull(2)?.trim()?.toFloatOrNull()
+                SinaKind.HK_PCT8 -> fields.getOrNull(8)?.trim()?.toFloatOrNull()
+                SinaKind.HF_PRICE_PREV -> {
+                    val cur = fields.getOrNull(0)?.trim()?.toDoubleOrNull() ?: return null
+                    val prev = fields.getOrNull(7)?.trim()?.toDoubleOrNull() ?: return null
+                    if (prev == 0.0) return null
+                    ((cur - prev) / prev * 100.0).toFloat()
+                }
+                SinaKind.NF_AU0 -> {
+                    val cur = fields.getOrNull(5)?.trim()?.toDoubleOrNull() ?: return null
+                    val prev = fields.getOrNull(9)?.trim()?.toDoubleOrNull() ?: return null
+                    if (prev == 0.0) return null
+                    ((cur - prev) / prev * 100.0).toFloat()
+                }
+            }
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun httpGet(urlStr: String, referer: String?): String {
+    /** Tencent qt.gtimg.cn — pct usually at field index 32; hf_* uses "price,pct,..." CSV. */
+    private fun tryTencent(codes: String): Float? {
+        return try {
+            val body = httpGet("https://qt.gtimg.cn/q=$codes", null, preferGbk = true)
+            val line = body.lineSequence().firstOrNull { it.contains('=') } ?: return null
+            val q = line.substringAfter('=').trim().trim('"').trim(';')
+            if (codes.startsWith("hf_") || codes.startsWith("nf_")) {
+                // "4217.60,1.46,..."
+                q.split(",").getOrNull(1)?.trim()?.toFloatOrNull()
+            } else {
+                q.split("~").getOrNull(32)?.trim()?.toFloatOrNull()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun httpGet(urlStr: String, referer: String?, preferGbk: Boolean): String {
         val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             connectTimeout = 8000
             readTimeout = 8000
             requestMethod = "GET"
             setRequestProperty("User-Agent", UA)
-            if (referer != null) {
-                setRequestProperty("Referer", referer)
-            }
+            setRequestProperty("Accept", "*/*")
+            if (referer != null) setRequestProperty("Referer", referer)
             instanceFollowRedirects = true
         }
         try {
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
                 ?: throw IllegalStateException("HTTP $code")
-            // Sina often returns GBK
-            val charset = if (urlStr.contains("sinajs")) {
-                Charset.forName("GBK")
-            } else {
-                Charsets.UTF_8
-            }
+            val charset = if (preferGbk) Charset.forName("GBK") else Charsets.UTF_8
             return BufferedReader(InputStreamReader(stream, charset)).use { it.readText() }
         } finally {
             conn.disconnect()
