@@ -11,6 +11,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.pm.PackageInfoCompat
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
@@ -18,6 +19,9 @@ class MainActivity : AppCompatActivity() {
     private val io = Executors.newSingleThreadExecutor()
     private lateinit var pctText: TextView
     private lateinit var tierText: TextView
+    private lateinit var versionText: TextView
+    private lateinit var statusText: TextView
+    private lateinit var errorText: TextView
     private var spinnerReady = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,6 +30,14 @@ class MainActivity : AppCompatActivity() {
 
         pctText = findViewById(R.id.pctText)
         tierText = findViewById(R.id.tierText)
+        versionText = findViewById(R.id.versionText)
+        statusText = findViewById(R.id.statusText)
+        errorText = findViewById(R.id.errorText)
+        findViewById<Button>(R.id.clearErrorBtn).setOnClickListener {
+            MoodPrefs.clearLastError(this)
+            updateLabels()
+        }
+        versionText.text = versionString()
         val btn = findViewById<Button>(R.id.setWallpaperBtn)
         val spinner = findViewById<Spinner>(R.id.debugSpinner)
 
@@ -78,6 +90,20 @@ class MainActivity : AppCompatActivity() {
         val debug = MoodPrefs.getDebugTier(this)
         val suffix = if (debug in 1..5) " (调试强制)" else ""
         tierText.text = getString(R.string.current_tier, MoodTier.label(effective) + suffix)
+        statusText.text = getString(
+            R.string.status_fmt, MoodPrefs.getRenderStatus(this) ?: getString(R.string.none)
+        )
+        errorText.text = getString(
+            R.string.error_fmt, MoodPrefs.getLastError(this) ?: getString(R.string.none)
+        )
+    }
+
+    private fun versionString(): String = try {
+        @Suppress("DEPRECATION")
+        val pi = packageManager.getPackageInfo(packageName, 0)
+        getString(R.string.version_fmt, pi.versionName ?: "?", PackageInfoCompat.getLongVersionCode(pi).toInt())
+    } catch (e: Exception) {
+        "版本 ?"
     }
 
     private fun refreshFromNetwork() {

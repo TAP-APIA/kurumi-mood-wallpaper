@@ -25,4 +25,12 @@ object MoodTier {
         4 -> R.raw.mood_4_smile
         else -> R.raw.mood_5_bigsmile
     }
+
+    fun stillResId(tier: Int): Int = when (tier.coerceIn(1, 5)) {
+        1 -> R.drawable.mood_1_cry_still
+        2 -> R.drawable.mood_2_worried_still
+        3 -> R.drawable.mood_3_calm_still
+        4 -> R.drawable.mood_4_smile_still
+        else -> R.drawable.mood_5_bigsmile_still
+    }
 }
