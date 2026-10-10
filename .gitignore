@@ -3,3 +3,8 @@ build/
 local.properties
 *.apk
 app/src/main/res/raw/*.mp4
+
+# signing keys (never commit)
+signing/
+*.keystore
+*.jks

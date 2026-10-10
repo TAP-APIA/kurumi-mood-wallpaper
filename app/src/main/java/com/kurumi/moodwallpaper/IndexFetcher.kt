@@ -55,16 +55,7 @@ object IndexFetcher {
                 sinaKind = SinaKind.HK_PCT8,
                 tencentCodes = "hkHSI"
             )
-            IndexSource.GOLD -> fetchPreset(
-                src,
-                eastmoneySecid = "101.GC00Y",
-                eastmoneyAltSecid = "118.AU9999",
-                sinaList = "hf_GC",
-                sinaKind = SinaKind.HF_PRICE_PREV,
-                sinaAltList = "nf_AU0",
-                sinaAltKind = SinaKind.NF_AU0,
-                tencentCodes = "hf_GC"
-            )
+            IndexSource.GOLD -> fetchPaxg(src)
             IndexSource.CUSTOM -> fetchCustom(ctx)
         }
     }
@@ -75,11 +66,7 @@ object IndexFetcher {
         /** gb_$xxx: name,price,pct,... */
         GB_PCT2,
         /** rt_hkHSI: code,name,cur,prev,open,high,low,...,change,pct(at 8) */
-        HK_PCT8,
-        /** hf_GC / hf_XAU: price,..., prev at [7] */
-        HF_PRICE_PREV,
-        /** nf_AU0: last at [5], prev_settle at [9] */
-        NF_AU0
+        HK_PCT8
     }
 
     private fun fetchPreset(
@@ -112,6 +99,34 @@ object IndexFetcher {
             return Result(it, "tencent:$tencentCodes", src.label)
         }
         throw IllegalStateException("无法获取 ${src.label} 涨跌幅（Eastmoney/Sina/Tencent 均失败）")
+    }
+
+    /** PAX Gold, trades 24/7. CoinGecko 24h change (%), fallback OKX last vs sodUtc8/open24h. */
+    private fun fetchPaxg(src: IndexSource): Result {
+        try {
+            val body = httpGet(
+                "https://api.coingecko.com/api/v3/simple/price?ids=pax-gold&vs_currencies=usd&include_24hr_change=true",
+                null, preferGbk = false
+            )
+            val o = JSONObject(body).getJSONObject("pax-gold")
+            val pct = o.getDouble("usd_24h_change")
+            if (pct.isFinite()) return Result(pct.toFloat(), "coingecko:pax-gold", src.label)
+        } catch (_: Exception) {
+        }
+        try {
+            val body = httpGet(
+                "https://www.okx.com/api/v5/market/ticker?instId=PAXG-USDT", null, preferGbk = false
+            )
+            val t = JSONObject(body).getJSONArray("data").getJSONObject(0)
+            val last = t.getString("last").toDouble()
+            var base = t.optString("sodUtc8").toDoubleOrNull() ?: 0.0
+            if (base <= 0.0) base = t.optString("open24h").toDoubleOrNull() ?: 0.0
+            if (base > 0.0) {
+                return Result(((last - base) / base * 100.0).toFloat(), "okx:PAXG-USDT", src.label)
+            }
+        } catch (_: Exception) {
+        }
+        throw IllegalStateException("无法获取 PAXG 涨跌幅（CoinGecko/OKX 均失败）")
     }
 
     fun fetchCustom(ctx: Context): Result {
@@ -170,36 +185,19 @@ object IndexFetcher {
                 SinaKind.SIMPLE_PCT3 -> fields.getOrNull(3)?.trim()?.toFloatOrNull()
                 SinaKind.GB_PCT2 -> fields.getOrNull(2)?.trim()?.toFloatOrNull()
                 SinaKind.HK_PCT8 -> fields.getOrNull(8)?.trim()?.toFloatOrNull()
-                SinaKind.HF_PRICE_PREV -> {
-                    val cur = fields.getOrNull(0)?.trim()?.toDoubleOrNull() ?: return null
-                    val prev = fields.getOrNull(7)?.trim()?.toDoubleOrNull() ?: return null
-                    if (prev == 0.0) return null
-                    ((cur - prev) / prev * 100.0).toFloat()
-                }
-                SinaKind.NF_AU0 -> {
-                    val cur = fields.getOrNull(5)?.trim()?.toDoubleOrNull() ?: return null
-                    val prev = fields.getOrNull(9)?.trim()?.toDoubleOrNull() ?: return null
-                    if (prev == 0.0) return null
-                    ((cur - prev) / prev * 100.0).toFloat()
-                }
             }
         } catch (_: Exception) {
             null
         }
     }
 
-    /** Tencent qt.gtimg.cn — pct usually at field index 32; hf_* uses "price,pct,..." CSV. */
+    /** Tencent qt.gtimg.cn — pct at field index 32. */
     private fun tryTencent(codes: String): Float? {
         return try {
             val body = httpGet("https://qt.gtimg.cn/q=$codes", null, preferGbk = true)
             val line = body.lineSequence().firstOrNull { it.contains('=') } ?: return null
             val q = line.substringAfter('=').trim().trim('"').trim(';')
-            if (codes.startsWith("hf_") || codes.startsWith("nf_")) {
-                // "4217.60,1.46,..."
-                q.split(",").getOrNull(1)?.trim()?.toFloatOrNull()
-            } else {
-                q.split("~").getOrNull(32)?.trim()?.toFloatOrNull()
-            }
+            q.split("~").getOrNull(32)?.trim()?.toFloatOrNull()
         } catch (_: Exception) {
             null
         }

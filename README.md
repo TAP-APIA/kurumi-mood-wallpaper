@@ -20,8 +20,10 @@
 | 沪深300 | `secid=1.000300` | 新浪 `s_sh000300` → 腾讯 `sh000300` |
 | 纳斯达克 | `secid=100.NDX`（纳斯达克100） | 新浪 `gb_$ndx` / `int_nasdaq` → 腾讯 `usNDX` |
 | 恒生指数 | `secid=100.HSI` | 新浪 `rt_hkHSI` → 腾讯 `hkHSI` |
-| 黄金 | `secid=101.GC00Y`（COMEX），备选 `118.AU9999` | 新浪 `hf_GC` / `nf_AU0` → 腾讯 `hf_GC` |
+| 黄金 (7×24 PAXG) | CoinGecko `pax-gold.usd_24h_change`（已是%） | OKX `PAXG-USDT`：(last − sodUtc8)/sodUtc8（缺失时用 open24h） |
 | 自定义 API | 用户填写的 URL + JSON 路径 | — |
+
+黄金使用 PAX Gold（链上代币化黄金，7×24 交易），周末也会变化；涨跌为近 24 小时。旧版选了「黄金」的用户会自动沿用新数据源。
 
 说明：`push2.eastmoney.com` 在部分网络返回 502，代码使用 `push2his.eastmoney.com`（带重试）。新浪请求带 `Referer: https://finance.sina.com.cn`。
 
@@ -46,6 +48,12 @@
 - 素材：Google Flow（Nano Banana 修图 + Veo 3.1 首尾同帧循环视频），`assets/stills` 为每档首帧。
 - 原图来自 X 用户 @L98808Lju 的久留美壁纸，仅供个人使用。
 - App 会提示申请「忽略电池优化」，减轻系统杀后台导致壁纸停更。
+
+## 自动更新
+
+App 打开时（最多每 12 小时一次）请求 GitHub `releases/latest`，若 tag 版本高于当前版本，弹窗显示更新说明，可选「更新 / 稍后」。更新会下载 APK 并调起系统安装器（首次需允许「安装未知应用」）；下载失败则打开发布页。主界面有「检查更新」按钮。GitHub 在国内可能较慢，超时会静默失败。
+
+覆盖安装要求签名一致：所有版本都用同一个 debug keystore 签名。构建时默认读取 `/workspace/kurumi/signing/kurumi-debug.keystore`（可用 `-PkurumiKeystore=` 或环境变量 `KURUMI_KEYSTORE` 指定）；keystore 不入库。
 
 ## 构建
 

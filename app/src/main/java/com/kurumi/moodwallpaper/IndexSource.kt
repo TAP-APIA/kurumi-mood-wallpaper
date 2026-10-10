@@ -9,7 +9,7 @@ enum class IndexSource(val id: String, val label: String) {
     CSI300("csi300", "沪深300"),
     NASDAQ("nasdaq", "纳斯达克"),
     HSI("hsi", "恒生指数"),
-    GOLD("gold", "黄金"),
+    GOLD("gold", "黄金 (7×24 PAXG)"),
     CUSTOM("custom", "自定义 API");
 
     companion object {

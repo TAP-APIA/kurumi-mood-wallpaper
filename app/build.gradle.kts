@@ -11,11 +11,32 @@ android {
         applicationId = "com.kurumi.moodwallpaper"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
+    }
+
+    // Same key as all previous releases (Android debug keystore), so updates install in place.
+    // Path override: -PkurumiKeystore=... or env KURUMI_KEYSTORE. Never commit the keystore.
+    val kurumiKeystore = file(
+        (project.findProperty("kurumiKeystore") as String?)
+            ?: System.getenv("KURUMI_KEYSTORE")
+            ?: "/workspace/kurumi/signing/kurumi-debug.keystore"
+    )
+    signingConfigs {
+        if (kurumiKeystore.exists()) {
+            create("kurumi") {
+                storeFile = kurumiKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfigs.findByName("kurumi")?.let { signingConfig = it }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

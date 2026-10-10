@@ -17,7 +17,10 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.core.content.pm.PackageInfoCompat
 import java.util.concurrent.Executors
 
@@ -37,6 +40,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var customMult: EditText
     private var spinnersReady = false
     private var batteryPrompted = false
+    private lateinit var updateText: TextView
+    private var currentVersion = "0"
+    private var updateDialogShown = false
+    private var pendingInstall: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +62,10 @@ class MainActivity : AppCompatActivity() {
         customMult = findViewById(R.id.customMult)
 
         versionText.text = versionString()
+        updateText = findViewById(R.id.updateText)
+        updateText.text = getString(R.string.update_idle, currentVersion)
+        findViewById<Button>(R.id.checkUpdateBtn).setOnClickListener { checkForUpdate(manual = true) }
+        if (UpdateChecker.shouldAutoCheck(this)) checkForUpdate(manual = false)
 
         findViewById<Button>(R.id.clearErrorBtn).setOnClickListener {
             MoodPrefs.clearLastError(this)
@@ -79,6 +90,12 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         updateLabels()
         updateBatteryLabel()
+        pendingInstall?.let { f ->
+            if (canInstallPackages()) {
+                pendingInstall = null
+                launchInstaller(f)
+            }
+        }
         if (!batteryPrompted && !isIgnoringBatteryOptimizations()) {
             batteryPrompted = true
             requestIgnoreBattery()
@@ -223,6 +240,7 @@ class MainActivity : AppCompatActivity() {
     private fun versionString(): String = try {
         @Suppress("DEPRECATION")
         val pi = packageManager.getPackageInfo(packageName, 0)
+        currentVersion = pi.versionName ?: "0"
         getString(
             R.string.version_fmt,
             pi.versionName ?: "?",
@@ -323,6 +341,121 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG
                 ).show()
             }
+        }
+    }
+
+    // ------------------------------------------------------------------ updates
+
+    private fun checkForUpdate(manual: Boolean) {
+        if (manual) updateText.text = getString(R.string.update_checking)
+        Thread {
+            try {
+                val rel = UpdateChecker.fetchLatest()
+                UpdateChecker.markChecked(this)
+                val newer = UpdateChecker.compareVersions(rel.version, currentVersion) > 0
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (newer) {
+                        updateText.text = getString(R.string.update_found, currentVersion, rel.version)
+                        if (manual || !updateDialogShown) showUpdateDialog(rel)
+                    } else {
+                        updateText.text = getString(R.string.update_latest, currentVersion)
+                    }
+                }
+            } catch (e: Exception) {
+                // Fail quietly on auto check (GitHub can be slow/blocked); show text only.
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    updateText.text = if (manual) {
+                        getString(R.string.update_failed, currentVersion, e.message ?: e.javaClass.simpleName)
+                    } else {
+                        getString(R.string.update_idle, currentVersion)
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun showUpdateDialog(rel: UpdateChecker.Release) {
+        updateDialogShown = true
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.update_dialog_title, rel.tag))
+            .setMessage(rel.notes.ifBlank { rel.htmlUrl })
+            .setPositiveButton(R.string.update_now) { _, _ -> startUpdate(rel) }
+            .setNegativeButton(R.string.update_later, null)
+            .show()
+    }
+
+    private fun startUpdate(rel: UpdateChecker.Release) {
+        if (rel.apkUrl == null) {
+            openUrl(rel.htmlUrl)
+            return
+        }
+        val progress = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.update_dialog_title, rel.tag))
+            .setMessage("正在下载… 0%")
+            .setCancelable(false)
+            .show()
+        Thread {
+            try {
+                val file = UpdateChecker.downloadApk(this, rel) { pct ->
+                    runOnUiThread { progress.setMessage("正在下载… $pct%") }
+                }
+                runOnUiThread {
+                    progress.dismiss()
+                    installApk(file)
+                }
+            } catch (e: Exception) {
+                MoodPrefs.recordError(this, "更新下载失败: ${e.message}")
+                runOnUiThread {
+                    progress.dismiss()
+                    Toast.makeText(this, "下载失败，改为打开发布页: ${e.message}", Toast.LENGTH_LONG).show()
+                    openUrl(rel.htmlUrl)
+                    updateLabels()
+                }
+            }
+        }.start()
+    }
+
+    private fun canInstallPackages(): Boolean = packageManager.canRequestPackageInstalls()
+
+    private fun installApk(file: File) {
+        if (!canInstallPackages()) {
+            pendingInstall = file
+            Toast.makeText(this, "请允许本应用安装未知应用，返回后自动继续安装", Toast.LENGTH_LONG).show()
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                        .setData(Uri.parse("package:$packageName"))
+                )
+            } catch (e: Exception) {
+                pendingInstall = null
+                launchInstaller(file)
+            }
+            return
+        }
+        launchInstaller(file)
+    }
+
+    private fun launchInstaller(file: File) {
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            MoodPrefs.recordError(this, "启动安装器失败: ${e.message}")
+            openUrl("https://github.com/TAP-APIA/kurumi-mood-wallpaper/releases/latest")
+        }
+    }
+
+    private fun openUrl(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (e: Exception) {
+            Toast.makeText(this, "无法打开浏览器: $url", Toast.LENGTH_LONG).show()
         }
     }
 }

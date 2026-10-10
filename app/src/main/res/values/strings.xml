@@ -16,6 +16,15 @@
     <string name="battery_need">电池优化: 未忽略（可能被系统杀死）</string>
     <string name="battery_request">申请忽略电池优化</string>
     <string name="battery_settings">打开电池设置</string>
+    <string name="check_update">检查更新</string>
+    <string name="update_idle">当前版本 %1$s</string>
+    <string name="update_checking">正在检查更新…</string>
+    <string name="update_latest">当前版本 %1$s · 已是最新</string>
+    <string name="update_found">当前版本 %1$s · 发现新版本 %2$s</string>
+    <string name="update_failed">当前版本 %1$s · 检查失败: %2$s</string>
+    <string name="update_dialog_title">发现新版本 %1$s</string>
+    <string name="update_now">更新</string>
+    <string name="update_later">稍后</string>
     <string name="debug_force">调试强制档位</string>
     <string name="version_fmt">版本 %1$s (%2$d)</string>
     <string name="status_fmt">渲染状态: %1$s</string>
