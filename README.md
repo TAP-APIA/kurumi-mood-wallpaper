@@ -20,10 +20,12 @@
 | 沪深300 | `secid=1.000300` | 新浪 `s_sh000300` → 腾讯 `sh000300` |
 | 纳斯达克 | `secid=100.NDX`（纳斯达克100） | 新浪 `gb_$ndx` / `int_nasdaq` → 腾讯 `usNDX` |
 | 恒生指数 | `secid=100.HSI` | 新浪 `rt_hkHSI` → 腾讯 `hkHSI` |
-| 黄金 (7×24 PAXG) | CoinGecko `pax-gold.usd_24h_change`（已是%） | OKX `PAXG-USDT`：(last − sodUtc8)/sodUtc8（缺失时用 open24h） |
+| 黄金 (7×24 PAXG) | OKX `PAXG-USDT`（www / aws 两个域名） | Gate `PAXG_USDT` → 火币 HTX `xautusdt`（无 PAXG，用 XAUT 代替） → Bitget → KuCoin → MEXC `GOLD(PAXG)USDT` → CoinGecko |
 | 自定义 API | 用户填写的 URL + JSON 路径 | — |
 
-黄金使用 PAX Gold（链上代币化黄金，7×24 交易），周末也会变化；涨跌为近 24 小时。旧版选了「黄金」的用户会自动沿用新数据源。
+黄金使用 PAX Gold（链上代币化黄金，7×24 交易），周末也会变化；涨跌为近 24 小时（OKX 以北京时间 0 点开盘价为基准）。数据源按国内可达性排序。
+
+每个数据源超时约 5 秒并重试 1 次，失败则换下一个；全部失败时「最近错误」会列出已尝试的源，并保留上一档情绪。之后任意一次成功会自动清除该行情错误（渲染错误单独保留）。主界面在涨跌幅旁显示「更新于 HH:mm」。旧版选了「黄金」的用户会自动沿用新数据源。
 
 说明：`push2.eastmoney.com` 在部分网络返回 502，代码使用 `push2his.eastmoney.com`（带重试）。新浪请求带 `Referer: https://finance.sina.com.cn`。
 

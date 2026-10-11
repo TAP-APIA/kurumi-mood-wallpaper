@@ -99,22 +99,21 @@ class MoodWallpaperService : WallpaperService() {
             }
             if (io.isShutdown) return
             io.execute {
+                val startedAt = System.currentTimeMillis()
                 try {
                     val result = IndexFetcher.fetch(applicationContext)
                     val tier = MoodTier.fromPct(result.pct)
-                    MoodPrefs.saveQuote(
-                        applicationContext, result.pct, tier,
+                    MoodPrefs.onQuoteSuccess(
+                        applicationContext, startedAt, result.pct, tier,
                         "${result.label} (${result.source})"
                     )
-                    mainHandler.post { switchIfNeeded(MoodPrefs.effectiveTier(applicationContext)) }
                 } catch (e: Exception) {
-                    MoodPrefs.recordError(
-                        applicationContext,
-                        "行情: ${e.message ?: e.javaClass.simpleName}"
+                    // Keep last mood (default mood_3); error only kept if still the latest attempt.
+                    MoodPrefs.onQuoteFailure(
+                        applicationContext, startedAt, e.message ?: e.javaClass.simpleName
                     )
-                    // Keep last mood (default mood_3)
-                    mainHandler.post { switchIfNeeded(MoodPrefs.effectiveTier(applicationContext)) }
                 }
+                mainHandler.post { switchIfNeeded(MoodPrefs.effectiveTier(applicationContext)) }
             }
             if (force) { /* just kick off above */ }
         }

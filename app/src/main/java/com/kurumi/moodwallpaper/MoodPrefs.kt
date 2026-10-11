@@ -18,6 +18,9 @@ object MoodPrefs {
     const val KEY_CUSTOM_URL = "custom_url"
     const val KEY_CUSTOM_PATH = "custom_path"
     const val KEY_CUSTOM_MULT = "custom_mult"
+    const val KEY_QUOTE_ERROR = "quote_error"
+    const val KEY_QUOTE_ERROR_AT = "quote_error_at"
+    const val KEY_QUOTE_OK_AT = "quote_ok_at"
 
     const val DEFAULT_TIER = 3
     const val DEFAULT_SOURCE = "shanghai"
@@ -86,10 +89,58 @@ object MoodPrefs {
         prefs(ctx).edit().putString(KEY_LAST_ERROR, "[${now()}] $msg").apply()
     }
 
-    fun getLastError(ctx: Context): String? = prefs(ctx).getString(KEY_LAST_ERROR, null)
+    fun getLastError(ctx: Context): String? {
+        val e = prefs(ctx).getString(KEY_LAST_ERROR, null)
+        // Pre-1.4 builds stored quote failures here; those now live in KEY_QUOTE_ERROR.
+        if (e != null && e.contains("] 行情:")) {
+            clearLastError(ctx)
+            return null
+        }
+        return e
+    }
 
     fun clearLastError(ctx: Context) {
         prefs(ctx).edit().remove(KEY_LAST_ERROR).apply()
+    }
+
+    // ---- quote fetch outcome (separate from render/other errors) ----
+    private val quoteLock = Any()
+
+    /**
+     * Successful fetch started at [startedAt]: save it (unless a newer success already landed)
+     * and clear any quote error from an attempt that started no later than this one.
+     */
+    fun onQuoteSuccess(ctx: Context, startedAt: Long, pct: Float, tier: Int, sourceLabel: String) =
+        synchronized(quoteLock) {
+            val p = prefs(ctx)
+            if (startedAt < p.getLong(KEY_QUOTE_OK_AT, 0L)) return@synchronized
+            val e = p.edit()
+                .putFloat(KEY_PCT, pct)
+                .putInt(KEY_TIER, tier.coerceIn(1, 5))
+                .putString(KEY_SOURCE_LABEL, sourceLabel)
+                .putLong(KEY_QUOTE_OK_AT, startedAt)
+            if (p.getLong(KEY_QUOTE_ERROR_AT, 0L) <= startedAt) {
+                e.remove(KEY_QUOTE_ERROR).remove(KEY_QUOTE_ERROR_AT)
+            }
+            e.commit()
+        }
+
+    /** Failed fetch: only recorded if no fetch that started later has already succeeded. */
+    fun onQuoteFailure(ctx: Context, startedAt: Long, msg: String) = synchronized(quoteLock) {
+        val p = prefs(ctx)
+        if (startedAt < p.getLong(KEY_QUOTE_OK_AT, 0L)) return@synchronized
+        p.edit()
+            .putString(KEY_QUOTE_ERROR, "[${now()}] 行情: $msg")
+            .putLong(KEY_QUOTE_ERROR_AT, startedAt)
+            .commit()
+    }
+
+    fun getQuoteError(ctx: Context): String? = prefs(ctx).getString(KEY_QUOTE_ERROR, null)
+
+    fun getQuoteOkAt(ctx: Context): Long = prefs(ctx).getLong(KEY_QUOTE_OK_AT, 0L)
+
+    fun clearQuoteError(ctx: Context) {
+        prefs(ctx).edit().remove(KEY_QUOTE_ERROR).remove(KEY_QUOTE_ERROR_AT).apply()
     }
 
     fun setRenderStatus(ctx: Context, msg: String) {

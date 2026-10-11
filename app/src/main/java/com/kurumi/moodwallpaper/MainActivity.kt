@@ -69,6 +69,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.clearErrorBtn).setOnClickListener {
             MoodPrefs.clearLastError(this)
+            MoodPrefs.clearQuoteError(this)
             updateLabels()
         }
         findViewById<Button>(R.id.setWallpaperBtn).setOnClickListener { openLiveWallpaperPicker() }
@@ -179,11 +180,12 @@ class MainActivity : AppCompatActivity() {
         saveCustomFields()
         Toast.makeText(this, "正在测试…", Toast.LENGTH_SHORT).show()
         io.execute {
+            val startedAt = System.currentTimeMillis()
             try {
                 val result = IndexFetcher.fetchCustom(this)
                 val tier = MoodTier.fromPct(result.pct)
-                MoodPrefs.saveQuote(
-                    this, result.pct, tier, "${result.label} (${result.source})"
+                MoodPrefs.onQuoteSuccess(
+                    this, startedAt, result.pct, tier, "${result.label} (${result.source})"
                 )
                 runOnUiThread {
                     updateLabels()
@@ -198,7 +200,7 @@ class MainActivity : AppCompatActivity() {
                     ).show()
                 }
             } catch (e: Exception) {
-                MoodPrefs.recordError(this, "自定义测试: ${e.message ?: e.javaClass.simpleName}")
+                MoodPrefs.onQuoteFailure(this, startedAt, "自定义测试: ${e.message ?: e.javaClass.simpleName}")
                 runOnUiThread {
                     updateLabels()
                     Toast.makeText(
@@ -222,7 +224,14 @@ class MainActivity : AppCompatActivity() {
 
         val pct = MoodPrefs.getPct(this)
         val pctStr = if (pct.isNaN()) "—" else String.format("%+.2f%%", pct)
-        pctText.text = getString(R.string.current_pct, pctStr)
+        val okAt = MoodPrefs.getQuoteOkAt(this)
+        val updated = if (okAt > 0) {
+            "  · 更新于 " + java.text.SimpleDateFormat(
+                if (System.currentTimeMillis() - okAt < 20 * 3600_000L) "HH:mm" else "MM-dd HH:mm",
+                java.util.Locale.US
+            ).format(java.util.Date(okAt))
+        } else ""
+        pctText.text = getString(R.string.current_pct, pctStr) + updated
 
         val effective = MoodPrefs.effectiveTier(this)
         val debug = MoodPrefs.getDebugTier(this)
@@ -232,8 +241,10 @@ class MainActivity : AppCompatActivity() {
         statusText.text = getString(
             R.string.status_fmt, MoodPrefs.getRenderStatus(this) ?: getString(R.string.none)
         )
+        val errs = listOfNotNull(MoodPrefs.getQuoteError(this), MoodPrefs.getLastError(this))
         errorText.text = getString(
-            R.string.error_fmt, MoodPrefs.getLastError(this) ?: getString(R.string.none)
+            R.string.error_fmt,
+            if (errs.isEmpty()) getString(R.string.none) else errs.joinToString("\n")
         )
     }
 
@@ -262,17 +273,17 @@ class MainActivity : AppCompatActivity() {
             return
         }
         io.execute {
+            val startedAt = System.currentTimeMillis()
             try {
                 val result = IndexFetcher.fetch(this)
                 val tier = MoodTier.fromPct(result.pct)
-                MoodPrefs.saveQuote(
-                    this, result.pct, tier, "${result.label} (${result.source})"
+                MoodPrefs.onQuoteSuccess(
+                    this, startedAt, result.pct, tier, "${result.label} (${result.source})"
                 )
-                runOnUiThread { updateLabels() }
             } catch (e: Exception) {
-                MoodPrefs.recordError(this, "行情: ${e.message ?: e.javaClass.simpleName}")
-                runOnUiThread { updateLabels() }
+                MoodPrefs.onQuoteFailure(this, startedAt, e.message ?: e.javaClass.simpleName)
             }
+            runOnUiThread { if (!isFinishing && !isDestroyed) updateLabels() }
         }
     }
 

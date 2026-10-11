@@ -11,8 +11,8 @@ android {
         applicationId = "com.kurumi.moodwallpaper"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
     }
 
     // Same key as all previous releases (Android debug keystore), so updates install in place.
